@@ -1,147 +1,114 @@
-# YouTube Fact-Checker Bot
+# YouTube Fact-Checker Bot 🤖✅
 
-A Python-based tool that extracts claims from YouTube video transcripts and fact-checks them using AI and web search.
+A Python-based AI tool that automatically extracts claims from YouTube video transcripts and fact-checks them using a multi-agent system (Tavily for research, Groq LLM for judgment).
 
-## Features
+![Dashboard Overview](assets/screenshot_1.png)
 
-- **Claim Extraction**: Automatically extracts factual claims from video transcripts with timestamps
-- **Three-Phase Fact-Checking**:
-  1. **Researcher**: Searches the web for evidence using Tavily
-  2. **Judge**: Analyzes claims against evidence using Groq LLM
-  3. **Packager**: Generates structured fact-check reports
-- **Interactive UI**: Streamlit dashboard with video sync, filters, and visual analytics
+## 📸 Screenshots
 
-## Setup
-ī
-1. Install dependencies:
-```bash
-pip install python-dotenv langchain-groq langchain-huggingface tavily-python streamlit plotly youtube-transcript-api
-```
+| Video Player & Sync | Truthometer Analytics |
+|:-------------------:|:---------------------:|
+| ![Player](assets/screenshot_2.png) | ![Truthometer](assets/screenshot_3.png) |
+| **Interactive Claims** | **Deep Dive Reports** |
+| ![False Claim](assets/screenshot_4.png) | ![Terminal](assets/screenshot_5.png) |
 
-2. Create a `.env` file with your API keys:
-```
-GROQ_API_KEY=your_groq_api_key_here
-TAVILY_API_KEY=your_tavily_api_key_here
-HUGGINGFACE_API_KEY=your_huggingface_api_key_here  # Optional, only if using HuggingFace
-```
+---
 
-3. Configure your LLM model in `model_config.py`:
-```python
-# Choose provider: "groq" or "huggingface"
-LLM_PROVIDER = "groq"
+## 🏗️ Technical Architecture
 
-# Choose model: "qwen", "llama", "mixtral", etc.
-ACTIVE_MODEL = "qwen"
-```
+The application is built on a **3-Phase Fact-Checking Pipeline** orchestrated by Python, with a Streamlit frontend.
 
-## Usage
+### 1. The Fact-Checking Pipeline (Backend)
+Located in `fact_checker.py`, the system uses a **Teacher-Judge-Packager** architecture (simplified to Research-Judge here):
 
-### Interactive UI (Recommended)
+#### **Phase 1: Research (The "Researcher")**
+- **Tool**: [Tavily API](https://tavily.com/)
+- **Logic**: We use Tavily's `search_depth="advanced"` mode to perform deep web scrapes for each claim.
+- **Process**:
+  1. Receives a claim string (e.g., "Python was released in 1991").
+  2. Tavily searches trusted domains and returns up to 5 relevant text snippets with URLs.
+  3. **Error Handling**: If the API fails or returns no results, the system flags the claim as `UNVERIFIABLE` to prevent hallucinations.
 
-Launch the Streamlit dashboard:
-```bash
-streamlit run ui.py
-```
+#### **Phase 2: Judgment (The "Judge")** ⚖️
+- **Tool**: [Groq API](https://groq.com/) (running Llama 3 / Mixtral / Qwen)
+- **Prompt Engineering**: The system uses a strict "Chain of Thought" prompt.
+  - **Input**: The original claim + raw evidence snippets from Tavily.
+  - **Instruction**: "Based ONLY on the evidence provided above..."
+  - **Output**: A strict JSON object containing:
+    - `verdict`: TRUE | FALSE | MISLEADING | UNVERIFIABLE
+    - `confidence`: HIGH | MEDIUM | LOW
+    - `explanation`: A concise summary of *why* the verdict was reached.
+- **Resiliency**: The system includes a **regex fallback parser** (`re.search(r'\{.*\}', content)`) to handle cases where the LLM wraps the JSON in markdown or adds conversational filler.
 
-Then open your browser to `http://localhost:8501`
+#### **Phase 3: Packaging**
+- Aggregates the `timestamp`, `claim`, `verdict`, and `evidence` into a structured JSON report (`fact_checked_report.json`).
 
-**Features:**
-- 📺 **Video Player**: Embedded YouTube player with timestamp sync
-- 📊 **Truthometer**: Visual gauge showing overall trust score (0-100)
-- 🔍 **Filter Pills**: Filter claims by status (All/True/False/Misleading/Unverifiable)
-- 🎯 **Interactive Claim Cards**: 
-  - Click "▶ Jump" to seek video to exact timestamp
-  - Click "📂 View Evidence" to see sources and explanations
-- 📈 **Summary Statistics**: Real-time stats on claim verdicts
+### 2. The Interactive Dashboard (Frontend)
+Built with **Streamlit**, the UI handles the complex synchronization between video playback and data.
 
-### Command Line Interface
+#### **Video Synchronization Logic** 🔄
+- **Problem**: Streamlit reruns the entire script on every interaction, which usually resets video players.
+- **Solution**:
+  - We use **Session State** (`st.session_state['timestamp']`) to track the current seek time.
+  - When you click "▶ Jump" on a claim card:
+    ```python
+    # From ui.py
+    if st.button("▶ Jump", key=f"jump_{index}"):
+        st.session_state['timestamp'] = seconds  # Update state
+        st.rerun()  # Force reload
+    ```
+  - The iframe URL is dynamically rebuilt with the `start` parameter: `https://www.youtube.com/embed/{video_id}?start={timestamp}`.
 
-#### Extract Claims Only
-```bash
-python main.py extract
-```
-This will:
-- Read `transcript.txt`
-- Extract claims with timestamps
-- Save to `claims.json`
+#### **The "Truthometer" Logic** 📊
+- **Visual**: A custom `plotly.graph_objects.Indicator` gauge chart.
+- **Algorithm**: A weighted formula to calculate the "Trust Score" (0-100%):
+  $$ \text{Score} = \left( \frac{\text{Count}_{\text{True}} + 0.5 \times \text{Count}_{\text{Misleading}}}{\text{Total Claims}} \right) \times 100 $$
+- **Reasoning**:
+  - **True claims** give full points.
+  - **Misleading claims** give half points (they have grains of truth but lack context).
+  - **False/Unverifiable** give zero points.
 
-#### Fact-Check Existing Claims
-```bash
-python main.py factcheck
-```
-This will:
-- Read claims from `claims.json`
-- Fact-check each claim
-- Generate `fact_checked_report.json`
+---
 
-#### Full Pipeline (Extract + Fact-Check)
-```bash
-python main.py
-```
-This runs both steps automatically.
+## 🚀 Setup & Installation
 
-## Output Format
+1. **Clone & Install**
+   ```bash
+   git clone https://github.com/yourusername/youtube-bot.git
+   cd youtube-bot
+   pip install -r requirements.txt
+   ```
+   *(Ensure you have `streamlit`, `tavily-python`, `langchain-groq`, `youtube-transcript-api` installed)*
 
-### claims.json
-```json
-[
-  {
-    "time": "0.13s",
-    "claim": "Python was created in 1991"
-  }
-]
-```
+2. **Configure API Keys**
+   Create a `.env` file:
+   ```env
+   GROQ_API_KEY=gsk_...
+   TAVILY_API_KEY=tvly-...
+   ```
 
-### fact_checked_report.json
-```json
-{
-  "summary": {
-    "total_claims": 10,
-    "true": 5,
-    "false": 1,
-    "misleading": 2,
-    "unverifiable": 2,
-    "errors": 0
-  },
-  "claims": [
-    {
-      "timestamp": "0.13s",
-      "claim": "Python was created in 1991",
-      "status": "TRUE",
-      "explanation": "Multiple sources confirm Python was released in 1991 by Guido van Rossum.",
-      "confidence": "HIGH",
-      "source_url": "https://wikipedia.org/...",
-      "sources": [...]
-    }
-  ]
-}
-```
+3. **Run the Dashboard**
+   ```bash
+   streamlit run ui.py
+   ```
 
-## Verdict Types
+## 🔧 Usage Guide
 
-- **TRUE**: Evidence clearly supports the claim
-- **FALSE**: Evidence clearly contradicts the claim
-- **MISLEADING**: Claim is partially true but missing context
-- **UNVERIFIABLE**: Insufficient evidence to make a determination
-- **ERROR**: Technical error during fact-checking
+1. **Enter URL**: Paste a YouTube link in the input field.
+2. **Analyze**: Click "Analyze Video". The system will:
+   - Fetch the transcript (supports English, Hindi, and Hinglish).
+   - Extract claims using the LLM.
+   - Run the 3-phase fact-check loop.
+3. **Explore Results**:
+   - **Filter**: Click the pills to see only "FALSE" or "MISLEADING" claims.
+   - **Verify**: Click "View Evidence" on any card to see the actual source URLs found by Tavily.
 
-## Files
+---
 
-- `ui.py` - Interactive Streamlit dashboard (includes UI helpers)
-- `main.py` - Main script for claim extraction and orchestration
-- `fact_checker.py` - Three-phase fact-checking system
-- `model_config.py` - LLM configuration and utilities
-- `transcript.txt` - Input transcript file
-- `claims.json` - Extracted claims
-- `fact_checked_report.json` - Final fact-check report
+## 📂 File Structure
 
-## How It Works
-
-1. **Transcript Fetching**: Enter a YouTube URL in the UI, and it fetches the transcript
-2. **Claim Extraction**: LLM analyzes the transcript and extracts factual claims with timestamps
-3. **Fact-Checking Pipeline**:
-   - **Researcher**: Tavily searches the web for evidence
-   - **Judge**: Groq LLM compares claim against evidence
-   - **Packager**: Structures the verdict with sources
-4. **Interactive Display**: View results in the dashboard with video sync and filters
-
+- `ui.py`: Main Streamlit application (Frontend).
+- `fact_checker.py`: Core logic for Research (Tavily) and Judgment (Groq).
+- `main.py`: CLI entry point and orchestration.
+- `transcript.txt`: Temporary storage for raw video text.
+- `report.json`: Final structured output.
