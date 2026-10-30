@@ -1,39 +1,28 @@
 # Model Configuration
 # Change these settings to switch between different LLM providers
 
-# Provider options: "groq" or "huggingface"
+# Provider options: "groq" or "huggingface". Both use GPT-OSS 120B.
 LLM_PROVIDER = "groq"
 
 # Model configurations for each provider
 GROQ_MODELS = {
-    "qwen": "qwen/qwen3-32b",
-    "llama": "llama-3.3-70b-versatile",
-    "mixtral": "mixtral-8x7b-32768",
-    "gemma": "gemma2-9b-it"
+    "gpt_oss": "openai/gpt-oss-120b",
 }
 
 HUGGINGFACE_MODELS = {
-    "qwen": "Qwen/Qwen2.5-72B-Instruct",
-    "llama": "meta-llama/Llama-3.1-70B-Instruct",
-    "mistral": "mistralai/Mistral-7B-Instruct-v0.3"
+    "gpt_oss": "openai/gpt-oss-120b",
 }
 
-# Select the active model (change this to switch models)
-ACTIVE_MODEL = "qwen"  # Options: "qwen", "llama", "mixtral", "gemma" (for Groq) or "qwen", "llama", "mistral" (for HuggingFace)
+# The model used by every legacy CLI/Streamlit provider configuration.
+ACTIVE_MODEL = "gpt_oss"
 
 # HuggingFace specific settings
 HUGGINGFACE_API_KEY = None  # Will be loaded from .env
 HUGGINGFACE_ENDPOINT = None  # Optional: custom inference endpoint
 
-# Token limits for different models (approximate)
+# Token limit for GPT-OSS 120B (approximate).
 TOKEN_LIMITS = {
-    "qwen/qwen3-32b": 6000,
-    "llama-3.3-70b-versatile": 8000,
-    "mixtral-8x7b-32768": 32000,
-    "gemma2-9b-it": 8000,
-    "Qwen/Qwen2.5-72B-Instruct": 32000,
-    "meta-llama/Llama-3.1-70B-Instruct": 8000,
-    "mistralai/Mistral-7B-Instruct-v0.3": 8000
+    "openai/gpt-oss-120b": 120000,
 }
 
 

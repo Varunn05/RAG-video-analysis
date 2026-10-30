@@ -1,114 +1,69 @@
-# YouTube Fact-Checker Bot 🤖✅
+# YouTube Fact Checker
 
-A Python-based AI tool that automatically extracts claims from YouTube video transcripts and fact-checks them using a multi-agent system (Tavily for research, Groq LLM for judgment).
+An evidence-first fact-checking application for YouTube videos. The frontend is a React single-page application and the backend is a FastAPI service whose analysis pipeline is expressed as a LangGraph workflow.
 
-![Dashboard Overview](assets/screenshot_1.png)
+## Architecture
 
-## 📸 Screenshots
+```text
+React + Vite  →  FastAPI  →  LangGraph
+                              ├─ identify video
+                              ├─ fetch YouTube transcript
+                              ├─ extract claims (Groq / LangChain)
+                              └─ research (Tavily) + judge (Groq / LangChain)
+```
 
-| Video Player & Sync | Truthometer Analytics |
-|:-------------------:|:---------------------:|
-| ![Player](assets/screenshot_2.png) | ![Truthometer](assets/screenshot_3.png) |
-| **Interactive Claims** | **Deep Dive Reports** |
-| ![False Claim](assets/screenshot_4.png) | ![Terminal](assets/screenshot_5.png) |
+The graph fits the multi-stage, stateful workflow; LangChain supplies the model client and message abstractions. Provider integrations are isolated in `backend/app/services`, so graph checkpoints, retries, or a human-review branch can be added later.
 
----
+## Project layout
 
-## 🏗️ Technical Architecture
+- `backend/app/main.py` — HTTP API and validation boundary.
+- `backend/app/workflow.py` — LangGraph nodes and pipeline definition.
+- `backend/app/services/` — YouTube, search, and LLM integrations.
+- `frontend/src/components/` — small reusable React UI components.
+- `frontend/src/api.ts`, `types.ts`, `utils.ts` — transport, domain types, and pure UI helpers.
+- `ui.py`, `main.py`, `fact_checker.py` — legacy Streamlit/CLI implementation, retained during migration.
 
-The application is built on a **3-Phase Fact-Checking Pipeline** orchestrated by Python, with a Streamlit frontend.
+## Setup
 
-### 1. The Fact-Checking Pipeline (Backend)
-Located in `fact_checker.py`, the system uses a **Teacher-Judge-Packager** architecture (simplified to Research-Judge here):
+Create a `.env` file in the repository root:
 
-#### **Phase 1: Research (The "Researcher")**
-- **Tool**: [Tavily API](https://tavily.com/)
-- **Logic**: We use Tavily's `search_depth="advanced"` mode to perform deep web scrapes for each claim.
-- **Process**:
-  1. Receives a claim string (e.g., "Python was released in 1991").
-  2. Tavily searches trusted domains and returns up to 5 relevant text snippets with URLs.
-  3. **Error Handling**: If the API fails or returns no results, the system flags the claim as `UNVERIFIABLE` to prevent hallucinations.
+```env
+GROQ_API_KEY=gsk_...
+TAVILY_API_KEY=tvly-...
+# Optional override (this is also the default)
+GROQ_MODEL=openai/gpt-oss-120b
+CORS_ORIGINS=["http://localhost:5173"]
+```
 
-#### **Phase 2: Judgment (The "Judge")** ⚖️
-- **Tool**: [Groq API](https://groq.com/) (running Llama 3 / Mixtral / Qwen)
-- **Prompt Engineering**: The system uses a strict "Chain of Thought" prompt.
-  - **Input**: The original claim + raw evidence snippets from Tavily.
-  - **Instruction**: "Based ONLY on the evidence provided above..."
-  - **Output**: A strict JSON object containing:
-    - `verdict`: TRUE | FALSE | MISLEADING | UNVERIFIABLE
-    - `confidence`: HIGH | MEDIUM | LOW
-    - `explanation`: A concise summary of *why* the verdict was reached.
-- **Resiliency**: The system includes a **regex fallback parser** (`re.search(r'\{.*\}', content)`) to handle cases where the LLM wraps the JSON in markdown or adds conversational filler.
+Install and run the backend:
 
-#### **Phase 3: Packaging**
-- Aggregates the `timestamp`, `claim`, `verdict`, and `evidence` into a structured JSON report (`fact_checked_report.json`).
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn backend.app.main:app --reload --port 8000
+```
 
-### 2. The Interactive Dashboard (Frontend)
-Built with **Streamlit**, the UI handles the complex synchronization between video playback and data.
+In another terminal, run the React client:
 
-#### **Video Synchronization Logic** 🔄
-- **Problem**: Streamlit reruns the entire script on every interaction, which usually resets video players.
-- **Solution**:
-  - We use **Session State** (`st.session_state['timestamp']`) to track the current seek time.
-  - When you click "▶ Jump" on a claim card:
-    ```python
-    # From ui.py
-    if st.button("▶ Jump", key=f"jump_{index}"):
-        st.session_state['timestamp'] = seconds  # Update state
-        st.rerun()  # Force reload
-    ```
-  - The iframe URL is dynamically rebuilt with the `start` parameter: `https://www.youtube.com/embed/{video_id}?start={timestamp}`.
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-#### **The "Truthometer" Logic** 📊
-- **Visual**: A custom `plotly.graph_objects.Indicator` gauge chart.
-- **Algorithm**: A weighted formula to calculate the "Trust Score" (0-100%):
-  $$ \text{Score} = \left( \frac{\text{Count}_{\text{True}} + 0.5 \times \text{Count}_{\text{Misleading}}}{\text{Total Claims}} \right) \times 100 $$
-- **Reasoning**:
-  - **True claims** give full points.
-  - **Misleading claims** give half points (they have grains of truth but lack context).
-  - **False/Unverifiable** give zero points.
+Open the Vite address (normally `http://localhost:5173`). Vite proxies `/api` to the FastAPI server in development.
 
----
+## API
 
-## 🚀 Setup & Installation
+`POST /api/analyses`
 
-1. **Clone & Install**
-   ```bash
-   git clone https://github.com/yourusername/youtube-bot.git
-   cd youtube-bot
-   pip install -r requirements.txt
-   ```
-   *(Ensure you have `streamlit`, `tavily-python`, `langchain-groq`, `youtube-transcript-api` installed)*
+```json
+{ "youtube_url": "https://www.youtube.com/watch?v=VIDEO_ID" }
+```
 
-2. **Configure API Keys**
-   Create a `.env` file:
-   ```env
-   GROQ_API_KEY=gsk_...
-   TAVILY_API_KEY=tvly-...
-   ```
+The response includes `video_id`, a verdict-count `summary`, and fact-checked `claims` with sources. `GET /api/health` is available for service checks.
 
-3. **Run the Dashboard**
-   ```bash
-   streamlit run ui.py
-   ```
+## Notes
 
-## 🔧 Usage Guide
-
-1. **Enter URL**: Paste a YouTube link in the input field.
-2. **Analyze**: Click "Analyze Video". The system will:
-   - Fetch the transcript (supports English, Hindi, and Hinglish).
-   - Extract claims using the LLM.
-   - Run the 3-phase fact-check loop.
-3. **Explore Results**:
-   - **Filter**: Click the pills to see only "FALSE" or "MISLEADING" claims.
-   - **Verify**: Click "View Evidence" on any card to see the actual source URLs found by Tavily.
-
----
-
-## 📂 File Structure
-
-- `ui.py`: Main Streamlit application (Frontend).
-- `fact_checker.py`: Core logic for Research (Tavily) and Judgment (Groq).
-- `main.py`: CLI entry point and orchestration.
-- `transcript.txt`: Temporary storage for raw video text.
-- `report.json`: Final structured output.
+This first API implementation is synchronous: a request completes when the report is ready. For videos with many claims, the natural next evolution is a persisted LangGraph run plus a status/SSE endpoint.
