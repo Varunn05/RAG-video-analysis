@@ -6,16 +6,13 @@ export const verdictMeta: Record<Verdict, { label: string; icon: string }> = {
 };
 
 export function secondsFromTimestamp(timestamp: string): number {
-  if (timestamp.includes(":")) return timestamp.split(":").reduce((total, value) => total * 60 + Number(value), 0);
-  return Math.floor(Number.parseFloat(timestamp) || 0);
+  const raw = timestamp.trim().replace(/^\[|\]$/g, "").replace(/s$/i, "");
+  if (raw.includes(":")) {
+    const parts = raw.split(":").map(Number);
+    if (parts.length >= 2 && parts.every(Number.isFinite)) return Math.floor(parts.reduce((total, value) => total * 60 + value, 0));
+  }
+  const match = raw.match(/-?\d+(?:\.\d+)?/);
+  return Math.max(0, Math.floor(match ? Number(match[0]) : 0));
 }
-
-export function formatTimestamp(timestamp: string): string {
-  const seconds = secondsFromTimestamp(timestamp);
-  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
-export function trustScore(summary: Summary): number {
-  if (!summary.total_claims) return 0;
-  return Math.round(((summary.true + summary.misleading * 0.5) / summary.total_claims) * 100);
-}
+export function formatTimestamp(timestamp: string): string { const seconds = secondsFromTimestamp(timestamp); return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; }
+export function trustScore(summary: Summary): number { if (!summary.total_claims) return 0; return Math.round(((summary.true + summary.misleading * 0.5) / summary.total_claims) * 100); }
