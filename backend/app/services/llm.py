@@ -27,6 +27,23 @@ def _json_from_response(content: str, fallback: object) -> object:
         return fallback
 
 
+def _normalize_timestamp(value: object) -> str:
+    """Return seconds from caption markers such as ``[83.42s]`` or ``01:23``."""
+    raw = str(value).strip()
+    bracketed = re.search(r"\[\s*([^\]]+)\s*\]", raw)
+    if bracketed:
+        raw = bracketed.group(1)
+
+    clock = re.fullmatch(r"(\d+):(\d{1,2})(?::(\d{1,2}))?", raw)
+    if clock:
+        first, second, third = clock.groups()
+        seconds = int(first) * 60 + int(second) if third is None else int(first) * 3600 + int(second) * 60 + int(third)
+        return str(seconds)
+
+    numeric = re.search(r"-?\d+(?:\.\d+)?", raw)
+    return numeric.group(0) if numeric else "0"
+
+
 def extract_claims(transcript: str, max_chars: int = 20_000) -> list[dict[str, str]]:
     chunks = [transcript[index:index + max_chars] for index in range(0, len(transcript), max_chars)]
     prompt = (
@@ -40,7 +57,7 @@ def extract_claims(transcript: str, max_chars: int = 20_000) -> list[dict[str, s
         parsed = _json_from_response(str(response.content), [])
         if isinstance(parsed, list):
             claims.extend(
-                {"time": str(item.get("time", "0s")), "claim": str(item["claim"])}
+                {"time": _normalize_timestamp(item.get("time", "0")), "claim": str(item["claim"])}
                 for item in parsed
                 if isinstance(item, dict) and item.get("claim")
             )
